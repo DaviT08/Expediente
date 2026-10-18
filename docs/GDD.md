@@ -1,6 +1,6 @@
 # EXPEDIENTE — Game Design Document + PRD
 
-**Versão:** 1.0 · 18/10/2026
+**Versão:** 1.1 · 18/10/2026
 **Autores:** Carlos Simeão, Yasmin Paiva e Marcelo Augusto Filho
 **Produto:** atividade gamificada (visual novel em pixel art, ~30 min) sobre as 8 inteligências de Gardner, com ênfase em interpessoal e intrapessoal
 **Stack:** Next.js + TypeScript (Antigravity) · GitHub Desktop · Vercel · Supabase
@@ -14,6 +14,16 @@
 3. **Não invente** regras de pontuação, lógica de finais, textos obrigatórios ou campos de banco fora do que está aqui. Se algo estiver ambíguo, pergunte antes de implementar.
 4. O roteiro (§5) traz todas as cenas, todas as decisões, todas as opções e suas tags. Você escreve os **diálogos** a partir dos beats, seguindo o guia de estilo (§5.6) e o orçamento de palavras (§5.7). **Não altere** o texto das opções nem as tags sem autorização.
 5. Todo texto de interface em **português do Brasil**.
+
+### 0.1 Arquitetura v1.1 (18/10/2026) — tem prioridade sobre as demais seções
+O projeto **não tem banco de dados nem painel admin**. Tudo roda no navegador do aluno.
+- **Removidos:** Supabase (§11.5–11.8), rotas `/api` (§11.6), painel admin (§9), código de turma, cron, `attempt`, % da turma no fluxograma (§5.8) e as métricas de turma da §1.5.
+- **Entrada:** só o nome. Texto de ciência (substitui C.1): *"Esta é uma atividade educacional sobre as inteligências múltiplas. Suas escolhas ficam salvas só neste navegador. No final, você pode salvar seu relatório em PDF."*
+- **Cálculo:** perfil (§6.2) e final (§7.1) são calculados no cliente, com as funções puras de `lib/scoring`, `lib/endings` e `lib/report`.
+- **Persistência:** só `localStorage` (em `try/catch`). Quem vê o resultado é o aluno; o professor recebe o PDF, se o aluno enviar.
+- **Rotas:** `/` (entrada) → `/jogar` → `/espelho` → `/relatorio` (com "Salvar em PDF" pela impressão do navegador).
+- **Visual:** foco em PC. Sem áudio. Pixel art gerada em código (sem assets externos): `components/pixel/Scenes.tsx` (16 cenários 320x180 feitos de retângulos, com pequenas animações) e `components/pixel/sprites.ts` (bustos chibi 24x28 dos 11 personagens, com 3 expressões, piscar e boca animada enquanto o texto aparece). Layout de visual novel: cenário 16:9, personagem do POV à esquerda, interlocutor à direita (quem não fala fica escurecido), caixa de diálogo sobreposta com aba do nome na cor do personagem, escolhas num painel à direita. O fluxograma de fim de capítulo (§5.8) está implementado, sem as porcentagens.
+- **Novas fases:** F0 base ✔ · F1 motor ✔ · F2 conteúdo ✔ · **F3 Espelho + relatório ✔** · **F4 fluxograma ✔ (arte opcional, sem áudio)** · **F5 playtest e calibração**.
 
 ---
 
