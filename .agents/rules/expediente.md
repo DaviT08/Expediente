@@ -1,0 +1,11 @@
+# Projeto EXPEDIENTE — regras do agente
+- A especificação completa está em docs/GDD.md. Leia a seção relevante antes de cada tarefa.
+- Construa UMA fase por vez (GDD §14). Ao terminar, rode os critérios de aceite, mostre o resultado e PARE para revisão.
+- NÃO altere sem autorização explícita: texto das opções, tags e pesos (§5.5), fórmulas de pontuação (§6), lógica dos finais (§7), schema do banco (§11.5) e textos obrigatórios (Apêndice C).
+- Interface 100% em português do Brasil. Nunca chamar a atividade de "teste", "diagnóstico", "laudo" ou "avaliação psicológica".
+- Perfil e final são SEMPRE calculados no servidor a partir das escolhas gravadas. O cliente só envia decisionId + optionId.
+- SUPABASE_SERVICE_ROLE_KEY só em código de servidor. Nunca com prefixo NEXT_PUBLIC_. Nunca commitar .env.local.
+- Todo acesso a localStorage dentro de try/catch; o jogo funciona sem ele.
+- TypeScript strict, Zod em todas as rotas, sem dependências além das listadas no GDD §11.1 sem perguntar.
+- Ao escrever diálogos: GDD §5.6 (estilo) e §5.7 (palavras). Nenhuma opção pode soar como "a errada".
+- Se algo estiver ambíguo, PERGUNTE antes de implementar.

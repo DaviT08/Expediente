@@ -1,0 +1,1 @@
+-- Migration inicial do Supabase (§11.5) - Fase F3
