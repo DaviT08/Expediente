@@ -1,4 +1,4 @@
-import type { Var, Flag } from '@/content/tags';
+import type { Var, Flag, Effect } from '@/content/tags';
 import type { EndingId } from '@/lib/endings';
 
 export type RunStatus = 'in_progress' | 'completed' | 'abandoned';
@@ -69,7 +69,7 @@ export interface EnrichedTimelineItem {
   optionText: string;
   reactionLines?: { speaker?: string; expression?: string; text: string }[];
   tags?: Partial<Record<string, number>>;
-  effects?: { op: string; var?: string; flag?: string; value: any }[];
+  effects?: Effect[];
   reportSnippet?: string;
   responseMs?: number | null;
   timedOut: boolean;

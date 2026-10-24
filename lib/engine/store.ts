@@ -79,7 +79,7 @@ function clampVar(name: Var, val: number): number {
   return val;
 }
 
-function syncProgressInBackground(state: any) {
+function syncProgressInBackground(state: Partial<GameState>) {
   try {
     if (typeof window !== 'undefined' && state?.runId && state?.playerName) {
       fetch('/api/runs/sync', {

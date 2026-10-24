@@ -31,7 +31,7 @@ export default function PlayerStateCard({ run }: PlayerStateCardProps) {
   const negociacao = (fDados ? 1 : 0) + (fVoz ? 1 : 0) + (coop >= 2 ? 1 : 0);
 
   // Projeção do final (§7.1)
-  let projectedEnding = 'D';
+  let projectedEnding: 'A' | 'B' | 'C' | 'D' = 'D';
   if (coesao >= COESAO_MIN && negociacao >= NEGOCIACAO_MIN) {
     projectedEnding = 'A';
   } else if (coesao < COESAO_MIN && negociacao >= NEGOCIACAO_MIN) {
@@ -41,6 +41,8 @@ export default function PlayerStateCard({ run }: PlayerStateCardProps) {
   } else {
     projectedEnding = 'D';
   }
+
+  const effectiveEnding: 'A' | 'B' | 'C' | 'D' = (run.ending as 'A' | 'B' | 'C' | 'D' | undefined) || projectedEnding;
 
   // Identificação do capítulo
   const getChapterNumber = (nodeId: string): number => {
@@ -326,20 +328,20 @@ export default function PlayerStateCard({ run }: PlayerStateCardProps) {
 
         <div className="flex items-start space-x-3 pt-1">
           <div className="text-3xl font-pixel text-[#E0A526] px-3 py-1 bg-[#221F33] rounded border border-[#E0A526]/40">
-            {run.ending || projectedEnding}
+            {effectiveEnding}
           </div>
           <div>
             <h5 className="font-pixel text-lg text-[#F2EFE6]">
-              {ENDING_NAMES[(run.ending || projectedEnding) as any] || 'Desfecho'}
+              {ENDING_NAMES[effectiveEnding] || 'Desfecho'}
             </h5>
             <p className="text-xs text-slate-300 leading-relaxed mt-0.5">
-              {(run.ending || projectedEnding) === 'A' &&
+              {effectiveEnding === 'A' &&
                 'A equipe unida e bem fundamentada conquista autonomia completa na gestão do projeto com a cooperativa.'}
-              {(run.ending || projectedEnding) === 'B' &&
+              {effectiveEnding === 'B' &&
                 'A proposta técnica avança em aliança com a diretoria, mas a equipe opera com autonomia delegada por falta de união interna.'}
-              {(run.ending || projectedEnding) === 'C' &&
+              {effectiveEnding === 'C' &&
                 'O time mantém harmonia interpessoal, porém a falta de dados estruturados força concessões comerciais com a diretoria.'}
-              {(run.ending || projectedEnding) === 'D' &&
+              {effectiveEnding === 'D' &&
                 'Equipe dividida e projeto sem dados suficientes levam ao cancelamento da expansão e reatribuição das áreas.'}
             </p>
           </div>

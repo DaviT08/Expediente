@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPlayerRunDetails, deletePlayerRun } from '@/lib/supabase/service';
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ runId: string }> }
 ) {
   try {
@@ -22,16 +22,14 @@ export async function GET(
       timeline: result.timeline,
       isLive: result.isLive,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Erro ao carregar detalhes da partida' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erro ao carregar detalhes da partida';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ runId: string }> }
 ) {
   try {
@@ -42,10 +40,8 @@ export async function DELETE(
 
     const deleted = await deletePlayerRun(runId);
     return NextResponse.json({ success: deleted });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Erro ao excluir partida' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erro ao excluir partida';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

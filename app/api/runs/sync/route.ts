@@ -34,10 +34,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: false, error: 'Tipo de sincronização desconhecido' }, { status: 400 });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || 'Erro ao sincronizar com Supabase' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Erro ao sincronizar com Supabase';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

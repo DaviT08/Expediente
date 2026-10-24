@@ -1,5 +1,6 @@
 import { getNodeById } from '@/content/story';
-import type { PNode, KNode } from '@/content/tags';
+import type { PNode, KNode, Effect, Var, Flag } from '@/content/tags';
+import type { EndingId } from '@/lib/endings';
 import { createAdminClient } from './admin';
 import { getSupabaseClient } from './client';
 import type {
@@ -234,7 +235,7 @@ export function enrichChoicesWithStoryCatalog(choices: ChoiceRecord[]): Enriched
     let optionText = `Opção ${choice.option_id.toUpperCase()}`;
     let reactionLines: { speaker?: string; expression?: string; text: string }[] | undefined;
     let tags: Partial<Record<string, number>> | undefined;
-    let effects: any[] | undefined;
+    let effects: Effect[] | undefined;
     let reportSnippet: string | undefined;
 
     if (node && node.kind === 'decision') {
@@ -279,7 +280,7 @@ export function enrichChoicesWithStoryCatalog(choices: ChoiceRecord[]): Enriched
       effects,
       reportSnippet,
       responseMs: choice.response_ms,
-      timedOut: choice.timed_out,
+      timedOut: choice.timedOut ?? choice.timed_out,
       chosenAt: choice.chosen_at,
     };
   });
@@ -299,7 +300,7 @@ export async function getClasses(): Promise<ClassRecord[]> {
       if (!error && data && data.length > 0) {
         return data as ClassRecord[];
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.warn('Erro ao consultar turmas no Supabase, usando dados locais/demo:', err);
     }
   }
@@ -326,8 +327,7 @@ export async function getTeacherRuns(filters?: {
             code,
             name
           )
-        `)
-        .order('updated_at', { ascending: false });
+        `);
 
       if (filters?.classId && filters.classId !== 'all') {
         query = query.eq('class_id', filters.classId);
@@ -339,9 +339,10 @@ export async function getTeacherRuns(filters?: {
         query = query.ilike('player_name', `%${filters.search.trim()}%`);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query.order('updated_at', { ascending: false });
       if (!error && data) {
-        const mappedRuns: RunRecord[] = data.map((r: any) => ({
+        const rawData = data as unknown as Array<RunRecord & { classes?: { code?: string; name?: string } }>;
+        const mappedRuns: RunRecord[] = rawData.map((r) => ({
           ...r,
           class_code: r.classes?.code,
           class_name: r.classes?.name,
@@ -349,7 +350,7 @@ export async function getTeacherRuns(filters?: {
         }));
         return { runs: mappedRuns, isLive: true };
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.warn('Erro ao consultar runs no Supabase:', err);
     }
   }
@@ -403,13 +404,14 @@ export async function getPlayerRunDetails(runId: string): Promise<{
           .eq('run_id', runId)
           .order('chosen_at', { ascending: true });
 
-        const choices: ChoiceRecord[] = (choicesData as ChoiceRecord[]) || [];
+        const choices: ChoiceRecord[] = (choicesData as unknown as ChoiceRecord[]) || [];
         const enrichedTimeline = enrichChoicesWithStoryCatalog(choices);
 
+        const typedRunData = runData as unknown as RunRecord & { classes?: { code?: string; name?: string } };
         const mappedRun: RunRecord = {
-          ...runData,
-          class_code: runData.classes?.code,
-          class_name: runData.classes?.name,
+          ...typedRunData,
+          class_code: typedRunData.classes?.code,
+          class_name: typedRunData.classes?.name,
           choices_count: choices.length,
         };
 
@@ -419,7 +421,7 @@ export async function getPlayerRunDetails(runId: string): Promise<{
           isLive: true,
         };
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.warn(`Erro ao consultar detalhes da partida ${runId} no Supabase:`, err);
     }
   }
@@ -467,7 +469,7 @@ export function calculateClassMetrics(runs: RunRecord[]): ProfessorDashboardMetr
   let completedWithDuration = 0;
   let sumCohesion = 0;
 
-  const endingDistribution: Record<string, number> = {
+  const endingDistribution: Record<EndingId, number> = {
     A: 0,
     B: 0,
     C: 0,
@@ -503,7 +505,7 @@ export function calculateClassMetrics(runs: RunRecord[]): ProfessorDashboardMetr
     abandonedRuns,
     averageDurationMs: completedWithDuration > 0 ? Math.round(totalDurationMs / completedWithDuration) : 0,
     averageCohesion: totalRuns > 0 ? Number((sumCohesion / totalRuns).toFixed(1)) : 0,
-    endingDistribution: endingDistribution as any,
+    endingDistribution,
   };
 }
 
@@ -516,14 +518,14 @@ export async function syncRunProgressToSupabase(payload: {
   classCode?: string;
   currentNode: string;
   state: {
-    vars: any;
-    flags: any;
+    vars: Record<Var, number>;
+    flags: Record<Flag, boolean>;
     answered?: Record<string, string>;
   };
   status?: 'in_progress' | 'completed' | 'abandoned';
   mirror?: Record<string, number>;
-  scores?: any;
-  ending?: string;
+  scores?: Record<string, unknown>;
+  ending?: EndingId;
   totalMs?: number;
 }): Promise<{ success: boolean; error?: string }> {
   const supabase = createAdminClient() || getSupabaseClient();
@@ -543,11 +545,12 @@ export async function syncRunProgressToSupabase(payload: {
       .maybeSingle();
 
     if (classData) {
-      classId = classData.id;
+      const typedClass = classData as unknown as { id: string };
+      classId = typedClass.id;
     }
 
     // 2. Prepara objeto para upsert
-    const runObj: any = {
+    const runObj: Record<string, unknown> = {
       id: payload.runId,
       player_name: payload.playerName,
       current_node: payload.currentNode,
@@ -584,8 +587,9 @@ export async function syncRunProgressToSupabase(payload: {
     }
 
     return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'Erro inesperado' };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erro inesperado';
+    return { success: false, error: message };
   }
 }
 
@@ -625,8 +629,9 @@ export async function recordChoiceToSupabase(choice: {
       return { success: false, error: error.message };
     }
     return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'Erro inesperado' };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erro inesperado';
+    return { success: false, error: message };
   }
 }
 
