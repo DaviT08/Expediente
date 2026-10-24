@@ -79,6 +79,50 @@ function clampVar(name: Var, val: number): number {
   return val;
 }
 
+function syncProgressInBackground(state: any) {
+  try {
+    if (typeof window !== 'undefined' && state?.runId && state?.playerName) {
+      fetch('/api/runs/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'run',
+          runId: state.runId,
+          playerName: state.playerName,
+          classCode: state.classCode || 'GERAL',
+          currentNode: state.nodeId,
+          state: {
+            vars: state.vars,
+            flags: state.flags,
+            answered: state.answered,
+          },
+          status: state.isCompleted ? 'completed' : 'in_progress',
+          mirror: state.mirror,
+        }),
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
+function recordChoiceInBackground(runId: string, decisionId: string, optionId: string) {
+  try {
+    if (typeof window !== 'undefined' && runId) {
+      const decisionType = decisionId.startsWith('K') ? 'K' : decisionId.startsWith('N') ? 'N' : 'P';
+      fetch('/api/runs/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'choice',
+          runId,
+          decisionId,
+          optionId,
+          decisionType,
+        }),
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
 function saveToLocalStorage(state: Partial<GameState>) {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -103,6 +147,7 @@ function saveToLocalStorage(state: Partial<GameState>) {
         settings: state.settings,
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+      syncProgressInBackground(dataToSave);
     }
   } catch (err) {
     console.warn('Falha ao salvar no localStorage:', err);
@@ -274,10 +319,13 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   selectOption: (decisionId, optionId, effects, reactionLines, nextNode) => {
-    const { answered, applyEffects } = get();
+    const { runId, answered, applyEffects } = get();
     // Registra escolha
     const newAnswered = { ...answered, [decisionId]: optionId };
     set({ answered: newAnswered });
+
+    // Envia escolha para sincronização em segundo plano no Supabase
+    recordChoiceInBackground(runId, decisionId, optionId);
 
     // Aplica efeitos (se houver)
     if (effects && effects.length > 0) {

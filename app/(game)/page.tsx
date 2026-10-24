@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useGameStore } from '@/lib/engine/store';
 import HowToPlayModal from '@/components/game/HowToPlayModal';
@@ -121,9 +122,15 @@ export default function EntradaPage() {
           </div>
         </form>
 
-        <p className="mt-6 text-[11px] text-slate-500 font-mono">
-          Expediente · Visual Novel em Pixel Art (~30 min)
-        </p>
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 font-mono gap-2 pt-2 border-t border-slate-800/80">
+          <span>Expediente · Visual Novel em Pixel Art (~30 min)</span>
+          <Link
+            href="/professor"
+            className="text-[#E0A526]/90 hover:text-[#E0A526] hover:underline transition font-bold"
+          >
+            Área do Professor ↗
+          </Link>
+        </div>
       </div>
 
       {/* Modal Como Jogar (§4.1 & Apêndice C.2) */}
