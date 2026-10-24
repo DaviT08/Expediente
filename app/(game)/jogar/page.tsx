@@ -18,6 +18,8 @@ import ChapterFlowchart from '@/components/game/ChapterFlowchart';
 import { Line, PNode, KNode, SceneNode } from '@/content/tags';
 import type { CharacterId } from '@/content/characters';
 
+const STAGE_WIDTH = 'max-w-[min(1200px,calc((100dvh_-_96px)*16/9))]';
+
 export default function JogarPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -34,6 +36,7 @@ export default function JogarPage() {
     vars,
     flags,
     answered,
+    isPaused,
     loadSavedGame,
     advanceDialogue,
     selectOption,
@@ -118,8 +121,8 @@ export default function JogarPage() {
   // Fim de capítulo
   if (currentNode.kind === 'chapterEnd') {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-[#14121F] text-[#F2EFE6] select-none text-center">
-        <div className="w-full max-w-md bg-[#221F33] p-8 rounded-xl border-2 border-[#2B7A8C] shadow-2xl space-y-5">
+      <main className="flex min-h-screen flex-col items-center justify-center p-4 bg-[#14121F] text-[#F2EFE6] select-none text-center">
+        <div className="w-full max-w-lg bg-[#221F33] p-6 rounded-xl border-2 border-[#2B7A8C] shadow-2xl space-y-4">
           <span className="text-4xl">⏱</span>
           <h1 className="text-3xl font-pixel text-[#E0A526] tracking-wider">
             CAPÍTULO {currentNode.chapter} CONCLUÍDO
@@ -180,19 +183,21 @@ export default function JogarPage() {
   };
 
   // Trata escolha de opções
-  const handleSelectOption = (optionId: string) => {
+  // meta: tempo de resposta (medido pela lista de opções) e se o tempo acabou
+  const handleSelectOption = (optionId: string, meta: { responseMs?: number; timedOut?: boolean } = {}) => {
+    if (isPaused && !meta.timedOut) return;
     if (renderableNode.kind === 'decision') {
       if (renderableNode.type === 'P') {
         const pNode = renderableNode as PNode;
         const opt = pNode.options.find((o) => o.id === optionId);
         if (opt) {
-          selectOption(renderableNode.id, opt.id, [], opt.reaction, renderableNode.next);
+          selectOption(renderableNode.id, opt.id, [], opt.reaction, renderableNode.next, meta);
         }
       } else {
         const kNode = renderableNode as KNode;
         const opt = kNode.options.find((o) => o.id === optionId);
         if (opt) {
-          selectOption(renderableNode.id, opt.id, opt.effects, opt.reaction, opt.next || renderableNode.next);
+          selectOption(renderableNode.id, opt.id, opt.effects, opt.reaction, opt.next || renderableNode.next, meta);
         }
       }
     }
@@ -211,12 +216,13 @@ export default function JogarPage() {
   })();
 
   return (
-    <main className="min-h-screen bg-[#0b0a12] text-[#F2EFE6] flex flex-col items-center justify-center px-6 py-4 select-none">
-      <div className="w-full max-w-[1200px]">
+    <main className="min-h-screen bg-[#0b0a12] text-[#F2EFE6] flex flex-col items-center justify-center px-6 py-2 select-none">
+      {/* Largura limitada pela altura da tela: a cena 16:9 + HUD + rodapé cabem sem rolar (ex.: notebook 1366x768) */}
+      <div className={`w-full ${STAGE_WIDTH}`}>
         <HUD clock={renderableNode.clock} />
       </div>
 
-      <div className="w-full max-w-[1200px] mt-2">
+      <div className={`w-full ${STAGE_WIDTH} mt-1`}>
         <Stage
           bg={renderableNode.bg}
           pov={renderableNode.pov}
@@ -231,10 +237,15 @@ export default function JogarPage() {
               <div className="w-[60%] space-y-2">
                 {'timerSec' in renderableNode && renderableNode.timerSec && (
                   <TimerBar
+                    key={renderableNode.id}
                     durationSec={renderableNode.timerSec}
+                    paused={isPaused}
                     onTimeout={() => {
                       const timeoutOpt = (renderableNode as KNode).timeoutOption || (renderableNode as KNode).options[0].id;
-                      handleSelectOption(timeoutOpt);
+                      handleSelectOption(timeoutOpt, {
+                        responseMs: (renderableNode as KNode).timerSec! * 1000,
+                        timedOut: true,
+                      });
                     }}
                   />
                 )}
@@ -242,7 +253,8 @@ export default function JogarPage() {
                   decisionId={renderableNode.id}
                   prompt={renderableNode.prompt}
                   options={renderableNode.options}
-                  onSelect={handleSelectOption}
+                  onSelect={(id, responseMs) => handleSelectOption(id, { responseMs })}
+                  disabled={isPaused}
                 />
               </div>
             </div>
@@ -263,7 +275,7 @@ export default function JogarPage() {
         </Stage>
       </div>
 
-      <footer className="w-full max-w-[1200px] flex justify-between items-center text-xs font-pixel text-slate-500 pt-3">
+      <footer className={`w-full ${STAGE_WIDTH} flex justify-between items-center text-xs font-pixel text-slate-500 pt-2`}>
         <span>Jogador: {playerName}</span>
         <span>Clique ou Espaço para avançar · 1–4 para escolher</span>
       </footer>

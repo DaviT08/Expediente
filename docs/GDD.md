@@ -15,7 +15,14 @@
 4. O roteiro (§5) traz todas as cenas, todas as decisões, todas as opções e suas tags. Você escreve os **diálogos** a partir dos beats, seguindo o guia de estilo (§5.6) e o orçamento de palavras (§5.7). **Não altere** o texto das opções nem as tags sem autorização.
 5. Todo texto de interface em **português do Brasil**.
 
-### 0.1 Arquitetura v1.1 (18/10/2026) — tem prioridade sobre as demais seções
+### 0.2 Arquitetura v1.2 (24/10/2026) — atualiza a 0.1
+- **Supabase e painel do professor voltaram.** O painel fica em `/professor`, protegido pela senha da variável `PROFESSOR_PASSWORD`. Tem as abas Partidas, Visão da turma e Decisões (com o aviso de opção óbvia) e exporta CSV de partidas e de escolhas.
+- **Envio de dados:** 1 envio no início, 1 por decisão (com tempo de resposta) e 1 ao concluir o Espelho. Pontuação e final são recalculados no servidor.
+- **Texto de ciência (substitui o da 0.1):** *"Esta é uma atividade educacional sobre as inteligências múltiplas. Vamos registrar seu nome e as escolhas que você fizer no jogo. Só o professor responsável vê seus resultados. Os dados serão excluídos ao fim do semestre, e você pode pedir a exclusão antes disso. No final, você também pode salvar seu relatório em PDF."*
+- **Sem código de turma:** todas as partidas entram na turma `GERAL`.
+- **Sons curtos** gerados no navegador (escolha, confiança ▲/▼, cronômetro), com volume nas Opções. O cronômetro para quando o jogo está pausado.
+
+### 0.1 Arquitetura v1.1 (18/10/2026) — substituída em parte pela 0.2
 O projeto **não tem banco de dados nem painel admin**. Tudo roda no navegador do aluno.
 - **Removidos:** Supabase (§11.5–11.8), rotas `/api` (§11.6), painel admin (§9), código de turma, cron, `attempt`, % da turma no fluxograma (§5.8) e as métricas de turma da §1.5.
 - **Entrada:** só o nome. Texto de ciência (substitui C.1): *"Esta é uma atividade educacional sobre as inteligências múltiplas. Suas escolhas ficam salvas só neste navegador. No final, você pode salvar seu relatório em PDF."*

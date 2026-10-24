@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isProfessor, unauthorized } from '@/lib/professorAuth';
 import { getTeacherRuns, calculateClassMetrics, getClasses } from '@/lib/supabase/service';
 
 export async function GET(request: NextRequest) {
+  if (!isProfessor(request)) return unauthorized();
   try {
     const { searchParams } = new URL(request.url);
     const classId = searchParams.get('classId') || 'all';

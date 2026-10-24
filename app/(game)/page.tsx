@@ -93,7 +93,7 @@ export default function EntradaPage() {
           {/* Caixa de Ciência Obrigatória (Apêndice C.1) */}
           <div className="bg-[#14121F]/90 p-4 rounded-lg border border-slate-800 text-xs text-slate-300 space-y-3 leading-relaxed">
             <p>
-              Esta é uma atividade educacional sobre as inteligências múltiplas. Suas escolhas ficam salvas só neste navegador. No final, você pode salvar seu relatório em PDF.
+              Esta é uma atividade educacional sobre as inteligências múltiplas. Vamos registrar seu nome e as escolhas que você fizer no jogo. Só o professor responsável vê seus resultados. Os dados serão excluídos ao fim do semestre, e você pode pedir a exclusão antes disso. No final, você também pode salvar seu relatório em PDF.
             </p>
             <label className="flex items-center space-x-2.5 cursor-pointer pt-1 font-semibold text-slate-200 hover:text-white">
               <input

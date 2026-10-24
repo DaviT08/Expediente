@@ -1,10 +1,10 @@
 # Projeto EXPEDIENTE — regras do agente
-- A especificação completa está em docs/GDD.md. Leia a seção relevante antes de cada tarefa. A seção 0.1 (Arquitetura v1.1) tem prioridade sobre o resto.
+- A especificação completa está em docs/GDD.md. Leia a seção relevante antes de cada tarefa. As seções 0.2 (Arquitetura v1.2) e 0.1 têm prioridade sobre o resto; onde divergirem, vale a 0.2.
 - Construa UMA fase por vez (GDD §14). Ao terminar, rode os critérios de aceite, mostre o resultado e PARE para revisão.
 - NÃO altere sem autorização explícita: texto das opções, tags e pesos (§5.5), fórmulas de pontuação (§6), lógica dos finais (§7) e textos obrigatórios (Apêndice C).
 - Interface 100% em português do Brasil. Nunca chamar a atividade de "teste", "diagnóstico", "laudo" ou "avaliação psicológica".
-- SEM banco de dados, SEM painel admin, SEM rotas /api. Tudo roda no navegador do aluno. Não instale @supabase/* nem outro backend.
-- Perfil e final são calculados no cliente com as funções puras de lib/scoring, lib/endings e lib/report.
+- O projeto usa Supabase (via fetch, sem o pacote @supabase/*) e o painel do professor em /professor, protegido por PROFESSOR_PASSWORD. Não troque o banco nem instale outro backend sem autorização.
+- Perfil e final são calculados com as funções puras de lib/scoring, lib/endings e lib/report (no cliente para o relatório; no servidor para o painel).
 - Todo acesso a localStorage dentro de try/catch; o jogo funciona sem ele.
 - TypeScript strict, sem dependências além das listadas no GDD §11.1 sem perguntar.
 - Ao escrever diálogos: GDD §5.6 (estilo) e §5.7 (palavras). Nenhuma opção pode soar como "a errada".

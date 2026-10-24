@@ -1,41 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { syncRunProgressToSupabase, recordChoiceToSupabase } from '@/lib/supabase/service';
+import { syncRun, type SyncPayload } from '@/lib/supabase/service';
 
+// Recebe o progresso do aluno: 1 envio no início, 1 por decisão e 1 ao concluir.
 export async function POST(request: NextRequest) {
+  let body: SyncPayload;
   try {
-    const body = await request.json();
-
-    if (body.type === 'choice') {
-      const res = await recordChoiceToSupabase({
-        runId: body.runId,
-        decisionId: body.decisionId,
-        optionId: body.optionId,
-        decisionType: body.decisionType,
-        responseMs: body.responseMs,
-        timedOut: body.timedOut,
-      });
-      return NextResponse.json(res);
-    }
-
-    if (body.type === 'run' || !body.type) {
-      const res = await syncRunProgressToSupabase({
-        runId: body.runId,
-        playerName: body.playerName,
-        classCode: body.classCode,
-        currentNode: body.currentNode,
-        state: body.state,
-        status: body.status,
-        mirror: body.mirror,
-        scores: body.scores,
-        ending: body.ending,
-        totalMs: body.totalMs,
-      });
-      return NextResponse.json(res);
-    }
-
-    return NextResponse.json({ success: false, error: 'Tipo de sincronização desconhecido' }, { status: 400 });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Erro ao sincronizar com Supabase';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ success: false, error: 'Corpo inválido' }, { status: 400 });
   }
+  if (!body || typeof body.runId !== 'string' || typeof body.playerName !== 'string' || !body.state) {
+    return NextResponse.json({ success: false, error: 'Dados incompletos' }, { status: 400 });
+  }
+  const res = await syncRun(body);
+  return NextResponse.json(
+    { success: res.success, error: res.error },
+    { status: res.success ? 200 : res.status ?? 200 }
+  );
 }

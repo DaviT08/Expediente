@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isProfessor, unauthorized } from '@/lib/professorAuth';
 import { getPlayerRunDetails, deletePlayerRun } from '@/lib/supabase/service';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ runId: string }> }
 ) {
+  if (!isProfessor(request)) return unauthorized();
   try {
     const { runId } = await params;
     if (!runId) {
@@ -29,9 +31,10 @@ export async function GET(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ runId: string }> }
 ) {
+  if (!isProfessor(request)) return unauthorized();
   try {
     const { runId } = await params;
     if (!runId) {

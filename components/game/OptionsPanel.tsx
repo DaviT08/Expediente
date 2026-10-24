@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { useGameStore, GameSettings } from '@/lib/engine/store';
+import { useGameStore } from '@/lib/engine/store';
+import { playSfx } from '@/lib/sound';
 
 interface OptionsPanelProps {
   onBack: () => void;
@@ -64,6 +65,30 @@ export default function OptionsPanel({ onBack }: OptionsPanelProps) {
         <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-1">
           <span>Mais Rápido</span>
           <span>Mais Lento</span>
+        </div>
+      </div>
+
+      {/* Volume dos efeitos sonoros */}
+      <div>
+        <label className="block text-xs font-mono uppercase tracking-wider text-slate-300 mb-2">
+          Efeitos sonoros ({Math.round((settings.soundVolume ?? 0) * 100)}%{settings.soundVolume ? '' : ' · mudo'})
+        </label>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.1"
+          value={settings.soundVolume ?? 0}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            updateSettings({ soundVolume: v });
+            playSfx('click', v);
+          }}
+          className="w-full accent-[#E0A526] cursor-pointer"
+        />
+        <div className="flex justify-between text-[10px] font-mono text-slate-400 mt-1">
+          <span>Mudo</span>
+          <span>Máximo</span>
         </div>
       </div>
 

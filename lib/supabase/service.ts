@@ -2,7 +2,9 @@ import { getNodeById } from '@/content/story';
 import type { PNode, KNode, Effect, Var, Flag } from '@/content/tags';
 import type { EndingId } from '@/lib/endings';
 import { createAdminClient } from './admin';
-import { getSupabaseClient } from './client';
+import { calculateProfileScores } from '@/lib/scoring';
+import { calculateEnding } from '@/lib/endings';
+import { CONTENT_VERSION } from '@/content/config';
 import type {
   ClassRecord,
   RunRecord,
@@ -10,6 +12,10 @@ import type {
   EnrichedTimelineItem,
   ProfessorDashboardMetrics,
 } from './types';
+
+// Dados de demonstração só aparecem fora da produção (npm run dev).
+// No site publicado, sem Supabase configurado, o painel fica vazio em vez de mostrar alunos fictícios.
+const DEMO_ENABLED = process.env.NODE_ENV !== 'production';
 
 // Dados de demonstração (fallback rico e realista quando Supabase não estiver configurado)
 const DEMO_CLASSES: ClassRecord[] = [
@@ -280,7 +286,7 @@ export function enrichChoicesWithStoryCatalog(choices: ChoiceRecord[]): Enriched
       effects,
       reportSnippet,
       responseMs: choice.response_ms,
-      timedOut: choice.timedOut ?? choice.timed_out,
+      timedOut: choice.timed_out,
       chosenAt: choice.chosen_at,
     };
   });
@@ -290,21 +296,22 @@ export function enrichChoicesWithStoryCatalog(choices: ChoiceRecord[]): Enriched
  * Busca todas as turmas cadastradas
  */
 export async function getClasses(): Promise<ClassRecord[]> {
-  const supabase = createAdminClient() || getSupabaseClient();
+  const supabase = createAdminClient();
   if (supabase) {
     try {
       const { data, error } = await supabase
         .from('classes')
         .select('*')
         .order('name');
-      if (!error && data && data.length > 0) {
-        return data as ClassRecord[];
+      const list = (data as ClassRecord[] | null) ?? [];
+      if (!error && list.length > 0) {
+        return list;
       }
     } catch (err: unknown) {
       console.warn('Erro ao consultar turmas no Supabase, usando dados locais/demo:', err);
     }
   }
-  return DEMO_CLASSES;
+  return DEMO_ENABLED ? DEMO_CLASSES : [];
 }
 
 /**
@@ -315,7 +322,7 @@ export async function getTeacherRuns(filters?: {
   status?: string;
   search?: string;
 }): Promise<{ runs: RunRecord[]; isLive: boolean }> {
-  const supabase = createAdminClient() || getSupabaseClient();
+  const supabase = createAdminClient();
 
   if (supabase) {
     try {
@@ -356,6 +363,7 @@ export async function getTeacherRuns(filters?: {
   }
 
   // Fallback para dados de demonstração com filtros aplicados
+  if (!DEMO_ENABLED) return { runs: [], isLive: false };
   let filtered = [...DEMO_RUNS];
   if (filters?.classId && filters.classId !== 'all') {
     filtered = filtered.filter((r) => r.class_id === filters.classId);
@@ -379,7 +387,7 @@ export async function getPlayerRunDetails(runId: string): Promise<{
   timeline: EnrichedTimelineItem[];
   isLive: boolean;
 }> {
-  const supabase = createAdminClient() || getSupabaseClient();
+  const supabase = createAdminClient();
 
   if (supabase) {
     try {
@@ -427,6 +435,7 @@ export async function getPlayerRunDetails(runId: string): Promise<{
   }
 
   // Fallback para dados de demonstração
+  if (!DEMO_ENABLED) return { run: null, timeline: [], isLive: false };
   const demoRun = DEMO_RUNS.find((r) => r.id === runId) || null;
   const rawChoices = DEMO_CHOICES[runId] || [];
 
@@ -455,6 +464,33 @@ export async function getPlayerRunDetails(runId: string): Promise<{
     timeline: enrichChoicesWithStoryCatalog(rawChoices),
     isLive: false,
   };
+}
+
+/**
+ * Busca todas as escolhas gravadas (em páginas de 1000, o limite do Supabase).
+ * Se runIds for informado, devolve só as escolhas dessas partidas.
+ */
+export async function getAllChoices(runIds?: Set<string>): Promise<ChoiceRecord[]> {
+  const supabase = createAdminClient();
+  const keep = (c: ChoiceRecord) => !runIds || runIds.has(c.run_id);
+  if (!supabase) {
+    return DEMO_ENABLED ? Object.values(DEMO_CHOICES).flat().filter(keep) : [];
+  }
+  const PAGE = 1000;
+  const all: ChoiceRecord[] = [];
+  for (let offset = 0; offset < 200000; offset += PAGE) {
+    const { data, error } = await supabase
+      .from('choices')
+      .select('*')
+      .order('id')
+      .limit(PAGE)
+      .offset(offset);
+    if (error) throw new Error(error.message);
+    const page = (data as ChoiceRecord[] | null) ?? [];
+    all.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return all.filter(keep);
 }
 
 /**
@@ -510,124 +546,128 @@ export function calculateClassMetrics(runs: RunRecord[]): ProfessorDashboardMetr
 }
 
 /**
- * Salva ou atualiza uma partida no Supabase a partir do cliente ou rota da API
+ * Grava a partida e, se houver, a escolha que acabou de ser feita.
+ * O jogo chama isto 1 vez no início, 1 vez por decisão e 1 vez ao concluir o Espelho.
+ * Pontuação e final são recalculados aqui, a partir das escolhas, e nunca vêm prontos do navegador.
  */
-export async function syncRunProgressToSupabase(payload: {
+export interface SyncPayload {
   runId: string;
+  clientToken: string;
   playerName: string;
   classCode?: string;
+  consentAt: string;
+  startedAt: string;
   currentNode: string;
   state: {
     vars: Record<Var, number>;
     flags: Record<Flag, boolean>;
-    answered?: Record<string, string>;
+    answered: Record<string, string>;
   };
-  status?: 'in_progress' | 'completed' | 'abandoned';
-  mirror?: Record<string, number>;
-  scores?: Record<string, unknown>;
-  ending?: EndingId;
-  totalMs?: number;
-}): Promise<{ success: boolean; error?: string }> {
-  const supabase = createAdminClient() || getSupabaseClient();
+  completed?: boolean;
+  mirror?: Record<string, number> | null;
+  choice?: {
+    decisionId: string;
+    optionId: string;
+    responseMs?: number;
+    timedOut?: boolean;
+  };
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function syncRun(payload: SyncPayload): Promise<{ success: boolean; error?: string; status?: number }> {
+  const supabase = createAdminClient();
   if (!supabase) {
     return { success: false, error: 'Supabase não configurado.' };
   }
+  if (!UUID_RE.test(payload.runId) || !UUID_RE.test(payload.clientToken)) {
+    return { success: false, error: 'Partida inválida.', status: 400 };
+  }
 
   try {
-    // 1. Resolve id da turma se código foi fornecido
-    let classId: string | null = null;
-    const targetCode = payload.classCode?.trim().toUpperCase() || 'GERAL';
+    // 1. A partida já existe? Só quem tem o token da partida pode alterá-la.
+    const { data: existing, error: readError } = await supabase
+      .from('runs')
+      .select('client_token,status')
+      .eq('id', payload.runId)
+      .maybeSingle();
+    if (readError) return { success: false, error: readError.message };
+    const prev = existing as { client_token: string; status: string } | null;
+    if (prev && prev.client_token !== payload.clientToken) {
+      return { success: false, error: 'Token da partida não confere.', status: 403 };
+    }
 
+    // 2. Turma (GERAL quando não há código)
+    const targetCode = payload.classCode?.trim().toUpperCase() || 'GERAL';
     const { data: classData } = await supabase
       .from('classes')
       .select('id')
       .eq('code', targetCode)
       .maybeSingle();
-
-    if (classData) {
-      const typedClass = classData as unknown as { id: string };
-      classId = typedClass.id;
+    const classId = (classData as { id: string } | null)?.id;
+    if (!classId) {
+      return { success: false, error: `Turma ${targetCode} não encontrada. Rode as migrações do Supabase.` };
     }
 
-    // 2. Prepara objeto para upsert
+    // 3. Grava a partida
+    const answered = payload.state?.answered ?? {};
     const runObj: Record<string, unknown> = {
       id: payload.runId,
-      player_name: payload.playerName,
+      class_id: classId,
+      client_token: payload.clientToken,
+      player_name: String(payload.playerName || '').trim().slice(0, 60),
+      content_version: CONTENT_VERSION,
+      consent_at: payload.consentAt,
+      started_at: payload.startedAt,
       current_node: payload.currentNode,
-      state: payload.state,
-      status: payload.status || 'in_progress',
+      state: { vars: payload.state.vars, flags: payload.state.flags, answered },
+      status: payload.completed || prev?.status === 'completed' ? 'completed' : 'in_progress',
       updated_at: new Date().toISOString(),
     };
 
-    if (classId) {
-      runObj.class_id = classId;
-    }
-    if (payload.mirror) {
-      runObj.mirror = payload.mirror;
-    }
-    if (payload.scores) {
-      runObj.scores = payload.scores;
-    }
-    if (payload.ending) {
-      runObj.ending = payload.ending;
-    }
-    if (payload.totalMs) {
-      runObj.total_ms = payload.totalMs;
-    }
-    if (payload.status === 'completed') {
-      runObj.completed_at = new Date().toISOString();
-    }
-
-    const { error: upsertError } = await supabase
-      .from('runs')
-      .upsert(runObj, { onConflict: 'id' });
-
-    if (upsertError) {
-      return { success: false, error: upsertError.message };
+    if (payload.completed) {
+      const profile = calculateProfileScores(
+        Object.entries(answered).map(([decision_id, option_id]) => ({ decision_id, option_id }))
+      );
+      const tags = Object.keys(profile.intelligences) as (keyof typeof profile.intelligences)[];
+      runObj.scores = {
+        raw: Object.fromEntries(tags.map((t) => [t, profile.intelligences[t].raw])),
+        scores: Object.fromEntries(tags.map((t) => [t, profile.intelligences[t].score])),
+        base: Object.fromEntries(tags.map((t) => [t, profile.intelligences[t].base])),
+        deltas: Object.fromEntries(tags.map((t) => [t, profile.intelligences[t].delta])),
+      };
+      runObj.ending = calculateEnding(payload.state.vars, payload.state.flags).ending;
+      runObj.mirror = payload.mirror ?? null;
+      const now = new Date();
+      runObj.completed_at = now.toISOString();
+      runObj.total_ms = Math.max(0, now.getTime() - new Date(payload.startedAt).getTime());
     }
 
-    return { success: true };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Erro inesperado';
-    return { success: false, error: message };
-  }
-}
+    const { error: upsertError } = await supabase.from('runs').upsert(runObj, { onConflict: 'id' });
+    if (upsertError) return { success: false, error: upsertError.message };
 
-/**
- * Grava uma escolha pontual tomada pelo jogador
- */
-export async function recordChoiceToSupabase(choice: {
-  runId: string;
-  decisionId: string;
-  optionId: string;
-  decisionType: 'P' | 'K' | 'N';
-  responseMs?: number;
-  timedOut?: boolean;
-}): Promise<{ success: boolean; error?: string }> {
-  const supabase = createAdminClient() || getSupabaseClient();
-  if (!supabase) {
-    return { success: false, error: 'Supabase não configurado.' };
-  }
-
-  try {
-    const { error } = await supabase
-      .from('choices')
-      .upsert(
+    // 4. Grava a escolha
+    if (payload.choice) {
+      const node = getNodeById(payload.choice.decisionId);
+      if (!node || node.kind !== 'decision') {
+        return { success: false, error: 'Decisão desconhecida.', status: 400 };
+      }
+      const { error } = await supabase.from('choices').upsert(
         {
-          run_id: choice.runId,
-          decision_id: choice.decisionId,
-          option_id: choice.optionId,
-          decision_type: choice.decisionType,
-          response_ms: choice.responseMs || null,
-          timed_out: choice.timedOut || false,
+          run_id: payload.runId,
+          decision_id: payload.choice.decisionId,
+          option_id: payload.choice.optionId,
+          decision_type: node.type,
+          response_ms:
+            typeof payload.choice.responseMs === 'number' ? Math.round(payload.choice.responseMs) : null,
+          timed_out: !!payload.choice.timedOut,
           chosen_at: new Date().toISOString(),
         },
         { onConflict: 'run_id,decision_id' }
       );
-
-    if (error) {
-      return { success: false, error: error.message };
+      if (error) return { success: false, error: error.message };
     }
+
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Erro inesperado';
@@ -639,7 +679,7 @@ export async function recordChoiceToSupabase(choice: {
  * Exclui uma partida e suas escolhas (atendimento à LGPD/direito de exclusão do aluno)
  */
 export async function deletePlayerRun(runId: string): Promise<boolean> {
-  const supabase = createAdminClient() || getSupabaseClient();
+  const supabase = createAdminClient();
   if (supabase) {
     try {
       const { error } = await supabase.from('runs').delete().eq('id', runId);
@@ -650,6 +690,7 @@ export async function deletePlayerRun(runId: string): Promise<boolean> {
   }
 
   // Se for demo, simula exclusão na memória da sessão
+  if (!DEMO_ENABLED) return false;
   const idx = DEMO_RUNS.findIndex((r) => r.id === runId);
   if (idx !== -1) {
     DEMO_RUNS.splice(idx, 1);

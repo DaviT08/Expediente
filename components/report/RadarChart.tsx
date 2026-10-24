@@ -5,6 +5,7 @@ import { INTELLIGENCE_INFO } from '@/content/report/texts';
 
 interface Props {
   profile: ProfileResult;
+  group?: boolean; // true no painel do professor (média da turma)
 }
 
 const SIZE = 420;
@@ -21,7 +22,7 @@ function polygon(values: number[]) {
   return values.map((v, i) => point(i, v).map((n) => n.toFixed(1)).join(',')).join(' ');
 }
 
-export default function RadarChart({ profile }: Props) {
+export default function RadarChart({ profile, group = false }: Props) {
   const scores = TOP_LEVEL_TAGS.map((t) => profile.intelligences[t].score);
   const bases = TOP_LEVEL_TAGS.map((t) => profile.intelligences[t].base);
   const label = (t: TopLevelTag) =>
@@ -80,10 +81,12 @@ export default function RadarChart({ profile }: Props) {
         })}
       </svg>
       <figcaption className="text-sm text-slate-400 print:text-slate-600 text-center mt-2 leading-snug">
-        <span className="inline-block w-3 h-3 bg-[#E0A526]/60 border border-[#E0A526] align-middle mr-1" /> suas escolhas
+        <span className="inline-block w-3 h-3 bg-[#E0A526]/60 border border-[#E0A526] align-middle mr-1" /> {group ? 'média da turma' : 'suas escolhas'}
         <span className="inline-block w-5 border-t-2 border-dashed border-current align-middle mx-1 ml-4" /> escolha ao acaso
         <br />
-        O tracejado mostra quanto alguém pontuaria escolhendo ao acaso. O que importa é o quanto você ficou acima ou abaixo dele.
+        {group
+          ? 'O tracejado mostra quanto alguém pontuaria escolhendo ao acaso. O que importa é o quanto a turma ficou acima ou abaixo dele.'
+          : 'O tracejado mostra quanto alguém pontuaria escolhendo ao acaso. O que importa é o quanto você ficou acima ou abaixo dele.'}
       </figcaption>
     </figure>
   );

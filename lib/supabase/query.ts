@@ -11,6 +11,8 @@ export class PostgrestQueryBuilder {
   private filters: string[] = [];
   private orderClause: string = '';
   private limitCount?: number;
+  private offsetCount?: number;
+  private onConflict?: string;
   private isMaybeSingle: boolean = false;
   private isSingle: boolean = false;
   private method: string = 'GET';
@@ -50,6 +52,11 @@ export class PostgrestQueryBuilder {
     return this;
   }
 
+  offset(count: number) {
+    this.offsetCount = count;
+    return this;
+  }
+
   maybeSingle() {
     this.isMaybeSingle = true;
     return this;
@@ -63,11 +70,9 @@ export class PostgrestQueryBuilder {
   upsert(record: Record<string, unknown> | Array<Record<string, unknown>>, options?: { onConflict?: string }) {
     this.method = 'POST';
     this.body = record;
-    let prefer = 'resolution=merge-duplicates,return=representation';
-    if (options?.onConflict) {
-      prefer += `,on_conflict=${options.onConflict}`;
-    }
-    this.preferHeader = prefer;
+    // No PostgREST, on_conflict vai na URL (não no cabeçalho Prefer).
+    this.preferHeader = 'resolution=merge-duplicates,return=minimal';
+    this.onConflict = options?.onConflict;
     return this;
   }
 
@@ -78,6 +83,7 @@ export class PostgrestQueryBuilder {
 
   async then<TResult1 = SupabaseResponse, TResult2 = never>(
     onfulfilled?: ((value: SupabaseResponse) => TResult1 | PromiseLike<TResult1>) | null,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
   ): Promise<TResult1 | TResult2> {
     try {
@@ -93,6 +99,12 @@ export class PostgrestQueryBuilder {
       }
       if (this.limitCount !== undefined) {
         queryParts.push(`limit=${this.limitCount}`);
+      }
+      if (this.offsetCount !== undefined) {
+        queryParts.push(`offset=${this.offsetCount}`);
+      }
+      if (this.method === 'POST' && this.onConflict) {
+        queryParts.push(`on_conflict=${encodeURIComponent(this.onConflict)}`);
       }
 
       const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
@@ -111,6 +123,7 @@ export class PostgrestQueryBuilder {
         method: this.method,
         headers,
         body: this.body ? JSON.stringify(this.body) : undefined,
+        cache: 'no-store',
       });
 
       if (!res.ok) {
@@ -124,7 +137,8 @@ export class PostgrestQueryBuilder {
         return onfulfilled ? onfulfilled(result) : (result as unknown as TResult1);
       }
 
-      const json = await res.json();
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : null;
       let data = json;
       if (this.isMaybeSingle || this.isSingle) {
         data = Array.isArray(json) ? json[0] ?? null : json;

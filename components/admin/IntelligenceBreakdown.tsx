@@ -11,12 +11,14 @@ interface IntelligenceBreakdownProps {
 }
 
 export default function IntelligenceBreakdown({ run }: IntelligenceBreakdownProps) {
-  const answered = run.state?.answered || {};
+  const answered = run.state?.answered;
 
   const profile = useMemo(() => {
     try {
-      if (Object.keys(answered).length > 0) {
-        return calculateProfileScores(answered);
+      if (answered && Object.keys(answered).length > 0) {
+        return calculateProfileScores(
+          Object.entries(answered).map(([decision_id, option_id]) => ({ decision_id, option_id }))
+        );
       }
     } catch (e) {
       console.warn('Erro ao calcular perfil de inteligências:', e);

@@ -35,7 +35,7 @@ export default function DatabaseStatusBanner({
           <div>
             <div className="flex items-center space-x-2">
               <span className="text-xs uppercase font-mono tracking-wider font-bold text-slate-300">
-                {isLive ? 'Conexão Ativa com Supabase' : 'Modo Demonstração (Dados Locais)'}
+                {isLive ? 'Conexão Ativa com Supabase' : 'Banco de dados não conectado'}
               </span>
               <span
                 className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded font-bold ${
@@ -44,13 +44,13 @@ export default function DatabaseStatusBanner({
                     : 'bg-amber-950/80 text-amber-300 border border-amber-700/50'
                 }`}
               >
-                {isLive ? 'POSTGRES LIVE' : 'DEMO INTERATIVO'}
+                {isLive ? 'POSTGRES LIVE' : 'SEM BANCO'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               {isLive
                 ? 'Sincronizado com as tabelas runs e choices em tempo real.'
-                : 'Exibindo dados simulados com jogadores em diferentes estágios. Para conectar seu banco, configure o Supabase.'}
+                : 'As partidas dos alunos não estão sendo gravadas. No computador (npm run dev) aparecem dados de exemplo; no site publicado, a lista fica vazia.'}
             </p>
           </div>
         </div>
@@ -82,7 +82,8 @@ export default function DatabaseStatusBanner({
           <p className="font-bold text-[#E0A526]">Passos para conectar com seu projeto Supabase:</p>
           <ol className="list-decimal list-inside space-y-1 text-slate-400">
             <li>
-              Crie um arquivo <code className="text-amber-300">.env.local</code> na raiz do projeto com as chaves:
+              Na Vercel, em <b>Settings → Environment Variables</b> (ou num arquivo{' '}
+              <code className="text-amber-300">.env.local</code> no computador), cadastre:
             </li>
             <div className="p-2 bg-black/40 rounded border border-slate-800 text-[11px] text-emerald-400 select-all overflow-x-auto">
               NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co<br />
@@ -93,7 +94,10 @@ export default function DatabaseStatusBanner({
               Execute as migrations em <code className="text-amber-300">supabase/migrations/0001_init.sql</code> e{' '}
               <code className="text-amber-300">supabase/migrations/0002_professor_dashboard.sql</code> no SQL Editor do Supabase.
             </li>
-            <li>Reinicie o servidor local (<code className="text-amber-300">npm run dev</code>).</li>
+            <li>
+              Faça um novo deploy na Vercel (<b>Deployments → ⋯ → Redeploy</b>) ou reinicie o{' '}
+              <code className="text-amber-300">npm run dev</code>.
+            </li>
           </ol>
         </div>
       )}

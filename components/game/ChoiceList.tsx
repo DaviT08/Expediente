@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { shuffleWithSeed } from '@/lib/engine/shuffle';
 import { useGameStore } from '@/lib/engine/store';
 
@@ -13,7 +13,7 @@ interface ChoiceListProps {
   decisionId: string;
   prompt: string;
   options: ChoiceOption[];
-  onSelect: (optionId: string) => void;
+  onSelect: (optionId: string, responseMs: number) => void;
   disabled?: boolean;
 }
 
@@ -25,6 +25,13 @@ export default function ChoiceList({
   disabled = false,
 }: ChoiceListProps) {
   const runId = useGameStore((state) => state.runId);
+
+  // Momento em que as opções apareceram, para medir o tempo de resposta
+  const shownAtRef = useRef(0);
+  useEffect(() => {
+    shownAtRef.current = Date.now();
+  }, [decisionId]);
+  const choose = (id: string) => onSelect(id, Date.now() - shownAtRef.current);
 
   // Embaralha as opções de forma estável e determinística (GDD §11.4)
   const shuffledOptions = useMemo(() => {
@@ -39,12 +46,13 @@ export default function ChoiceList({
       const keyNum = parseInt(e.key, 10);
       if (keyNum >= 1 && keyNum <= shuffledOptions.length) {
         e.preventDefault();
-        onSelect(shuffledOptions[keyNum - 1].id);
+        choose(shuffledOptions[keyNum - 1].id);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shuffledOptions, disabled, onSelect]);
 
   return (
@@ -62,7 +70,7 @@ export default function ChoiceList({
           <button
             key={opt.id}
             disabled={disabled}
-            onClick={() => onSelect(opt.id)}
+            onClick={() => choose(opt.id)}
             className="group relative flex items-center w-full min-h-[56px] px-4 py-3 bg-[#221F33]/95 hover:bg-[#33295a] focus:bg-[#33295a] border-4 border-[#4a4168] hover:border-[#E0A526] focus:border-[#E0A526] focus:outline-none text-left text-lg text-[#F2EFE6] shadow-[4px_4px_0_#0b0a12] hover:translate-x-1 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {/* Tag do atalho 1-4 */}

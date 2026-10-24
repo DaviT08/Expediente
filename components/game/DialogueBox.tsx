@@ -87,6 +87,7 @@ export default function DialogueBox({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (useGameStore.getState().isPaused) return; // jogo pausado: não avança a fala
       const target = e.target as HTMLElement | null;
       if (target && ['BUTTON', 'INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       e.preventDefault();

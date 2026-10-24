@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { Var, Flag, Effect } from '@/content/tags';
+import { Var, Flag, Effect, Line } from '@/content/tags';
+import { playSfx } from '@/lib/sound';
 
 export interface GameSettings {
   textSize: 'normal' | 'large' | 'xlarge';
@@ -23,6 +24,7 @@ export interface GameState {
   playerName: string;
   classCode: string;
   startedAt: string;
+  consentAt: string;
   consent: boolean;
 
   // Estado narrativo
@@ -51,7 +53,14 @@ export interface GameState {
   hasSavedGame: () => boolean;
   clearSavedGame: () => void;
   advanceDialogue: () => void;
-  selectOption: (decisionId: string, optionId: string, effects: Effect[], reactionLines: any[], nextNode: string) => void;
+  selectOption: (
+    decisionId: string,
+    optionId: string,
+    effects: Effect[],
+    reactionLines: Line[],
+    nextNode: string,
+    meta?: { responseMs?: number; timedOut?: boolean }
+  ) => void;
   applyEffects: (effects: Effect[]) => void;
   setNode: (nodeId: string) => void;
   setPaused: (isPaused: boolean) => void;
@@ -79,47 +88,58 @@ function clampVar(name: Var, val: number): number {
   return val;
 }
 
-function syncProgressInBackground(state: Partial<GameState>) {
+// Identificador aleatório no formato que o banco espera (UUID)
+function newUuid(): string {
   try {
-    if (typeof window !== 'undefined' && state?.runId && state?.playerName) {
-      fetch('/api/runs/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'run',
-          runId: state.runId,
-          playerName: state.playerName,
-          classCode: state.classCode || 'GERAL',
-          currentNode: state.nodeId,
-          state: {
-            vars: state.vars,
-            flags: state.flags,
-            answered: state.answered,
-          },
-          status: state.isCompleted ? 'completed' : 'in_progress',
-          mirror: state.mirror,
-        }),
-      }).catch(() => {});
-    }
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   } catch {}
+  const b = new Uint8Array(16);
+  try {
+    crypto.getRandomValues(b);
+  } catch {
+    for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  }
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-function recordChoiceInBackground(runId: string, decisionId: string, optionId: string) {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Envia o progresso ao servidor para o painel do professor.
+ * Acontece só em 3 momentos: início da partida, cada decisão e conclusão do Espelho.
+ * Se falhar (sem internet), tenta mais uma vez depois de 4 s; o jogo continua normalmente.
+ */
+function syncToServer(
+  state: Partial<GameState>,
+  extra: { choice?: { decisionId: string; optionId: string; responseMs?: number; timedOut?: boolean }; completed?: boolean } = {}
+) {
   try {
-    if (typeof window !== 'undefined' && runId) {
-      const decisionType = decisionId.startsWith('K') ? 'K' : decisionId.startsWith('N') ? 'N' : 'P';
-      fetch('/api/runs/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'choice',
-          runId,
-          decisionId,
-          optionId,
-          decisionType,
-        }),
-      }).catch(() => {});
-    }
+    if (typeof window === 'undefined' || !state?.runId || !state?.playerName) return;
+    const body = JSON.stringify({
+      runId: state.runId,
+      clientToken: state.clientToken,
+      playerName: state.playerName,
+      classCode: state.classCode || 'GERAL',
+      consentAt: state.consentAt || state.startedAt,
+      startedAt: state.startedAt,
+      currentNode: state.nodeId,
+      state: { vars: state.vars, flags: state.flags, answered: state.answered ?? {} },
+      completed: extra.completed ?? state.isCompleted ?? false,
+      mirror: state.mirror,
+      choice: extra.choice,
+    });
+    const send = (retry: boolean) =>
+      fetch('/api/runs/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+        .then((r) => {
+          if (!r.ok && r.status >= 500 && retry) setTimeout(() => send(false), 4000);
+        })
+        .catch(() => {
+          if (retry) setTimeout(() => send(false), 4000);
+        });
+    send(true);
   } catch {}
 }
 
@@ -132,6 +152,7 @@ function saveToLocalStorage(state: Partial<GameState>) {
         playerName: state.playerName,
         classCode: state.classCode,
         startedAt: state.startedAt,
+        consentAt: state.consentAt,
         consent: state.consent,
         nodeId: state.nodeId,
         lineIndex: state.lineIndex,
@@ -147,7 +168,6 @@ function saveToLocalStorage(state: Partial<GameState>) {
         settings: state.settings,
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-      syncProgressInBackground(dataToSave);
     }
   } catch (err) {
     console.warn('Falha ao salvar no localStorage:', err);
@@ -160,6 +180,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   playerName: '',
   classCode: '',
   startedAt: '',
+  consentAt: '',
   consent: false,
 
   nodeId: 'prologo_intro',
@@ -192,8 +213,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   settings: DEFAULT_SETTINGS,
 
   initGame: (playerName: string, classCode: string) => {
-    const runId = 'run_' + Math.random().toString(36).substring(2, 11);
-    const clientToken = 'tok_' + Math.random().toString(36).substring(2, 11);
+    const runId = newUuid();
+    const clientToken = newUuid();
     const startedAt = new Date().toISOString();
 
     const newState = {
@@ -202,6 +223,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       playerName,
       classCode,
       startedAt,
+      consentAt: startedAt,
       consent: true,
       nodeId: 'prologo_intro',
       lineIndex: 0,
@@ -226,6 +248,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     set(newState);
     saveToLocalStorage({ ...get(), ...newState });
+    syncToServer(get());
   },
 
   hasSavedGame: () => {
@@ -247,10 +270,22 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (!raw) return false;
       const saved = JSON.parse(raw);
       if (saved && saved.runId) {
+        // Partidas salvas antes desta versão usavam um código que o banco não aceita: gera um novo.
+        const migrated = !UUID_RE.test(saved.runId) || !UUID_RE.test(saved.clientToken || '');
+        if (migrated) {
+          saved.runId = newUuid();
+          saved.clientToken = newUuid();
+          saved.consentAt = saved.consentAt || saved.startedAt;
+        }
         set({
           ...saved,
+          settings: { ...DEFAULT_SETTINGS, ...(saved.settings || {}) },
           isPaused: false,
         });
+        if (migrated) {
+          saveToLocalStorage(get());
+          syncToServer(get());
+        }
         return true;
       }
     } catch (err) {
@@ -318,19 +353,23 @@ export const useGameStore = create<GameState>((set, get) => ({
     saveToLocalStorage(get());
   },
 
-  selectOption: (decisionId, optionId, effects, reactionLines, nextNode) => {
-    const { runId, answered, applyEffects } = get();
+  selectOption: (decisionId, optionId, effects, reactionLines, nextNode, meta) => {
+    const { answered, applyEffects } = get();
+    if (answered[decisionId]) return; // evita registrar a mesma decisão duas vezes (clique duplo)
+    playSfx('click', get().settings.soundVolume);
     // Registra escolha
     const newAnswered = { ...answered, [decisionId]: optionId };
     set({ answered: newAnswered });
-
-    // Envia escolha para sincronização em segundo plano no Supabase
-    recordChoiceInBackground(runId, decisionId, optionId);
 
     // Aplica efeitos (se houver)
     if (effects && effects.length > 0) {
       applyEffects(effects);
     }
+
+    // Um único envio por decisão: escolha + estado já com os efeitos aplicados
+    syncToServer(get(), {
+      choice: { decisionId, optionId, responseMs: meta?.responseMs, timedOut: meta?.timedOut },
+    });
 
     // Se houver falas de reação local, entra em reação
     if (reactionLines && reactionLines.length > 0) {
@@ -371,6 +410,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     set((state) => ({
       toasts: [...state.toasts, { id, text, type }],
     }));
+    if (type !== 'info') playSfx(type, get().settings.soundVolume);
 
     // Auto-remove após 2.5s (conforme GDD §10.2)
     setTimeout(() => {
@@ -381,6 +421,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   saveMirror: (mirror: Record<string, number>) => {
     set({ mirror, isCompleted: true, completedAt: new Date().toISOString() });
     saveToLocalStorage(get());
+    syncToServer(get(), { completed: true });
   },
 
   removeToast: (id: string) => {

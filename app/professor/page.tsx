@@ -14,8 +14,38 @@ import PlayerList from '@/components/admin/PlayerList';
 import PlayerStateCard from '@/components/admin/PlayerStateCard';
 import PlayerTimeline from '@/components/admin/PlayerTimeline';
 import IntelligenceBreakdown from '@/components/admin/IntelligenceBreakdown';
+import ProfessorLogin from '@/components/admin/ProfessorLogin';
+import ClassOverview from '@/components/admin/ClassOverview';
+import DecisionStats from '@/components/admin/DecisionStats';
+import type { ClassOverview as Overview } from '@/lib/professorStats';
 
 export default function ProfessorDashboardPage() {
+  // Login: 'loading' → verificando; 'out' → pede a senha; 'in' → painel liberado
+  const [auth, setAuth] = useState<'loading' | 'out' | 'in'>('loading');
+  const [passwordConfigured, setPasswordConfigured] = useState(true);
+  const [view, setView] = useState<'runs' | 'overview' | 'decisions'>('runs');
+  const [overview, setOverview] = useState<(Overview & { isLive: boolean }) | null>(null);
+
+  const checkAuth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/professor/login', { cache: 'no-store' });
+      const data = await res.json();
+      setPasswordConfigured(!!data.configured);
+      setAuth(data.loggedIn ? 'in' : 'out');
+    } catch {
+      setAuth('out');
+    }
+  }, []);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  const logout = async () => {
+    await fetch('/api/professor/login', { method: 'DELETE' }).catch(() => {});
+    setAuth('out');
+  };
+
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [classes, setClasses] = useState<ClassRecord[]>([]);
   const [metrics, setMetrics] = useState<ProfessorDashboardMetrics>({
@@ -56,7 +86,11 @@ export default function ProfessorDashboardPage() {
       if (statusFilter !== 'all') params.set('status', statusFilter);
       if (search.trim()) params.set('search', search.trim());
 
-      const res = await fetch(`/api/professor/runs?${params.toString()}`);
+      const res = await fetch(`/api/professor/runs?${params.toString()}`, { cache: 'no-store' });
+      if (res.status === 401) {
+        setAuth('out');
+        return;
+      }
       const data = await res.json();
 
       if (data.success) {
@@ -88,7 +122,11 @@ export default function ProfessorDashboardPage() {
   const loadPlayerDetails = useCallback(async (runId: string) => {
     setIsLoadingDetails(true);
     try {
-      const res = await fetch(`/api/professor/runs/${runId}`);
+      const res = await fetch(`/api/professor/runs/${runId}`, { cache: 'no-store' });
+      if (res.status === 401) {
+        setAuth('out');
+        return;
+      }
       const data = await res.json();
       if (data.success) {
         setSelectedRun(data.run);
@@ -101,29 +139,60 @@ export default function ProfessorDashboardPage() {
     }
   }, []);
 
+  // Visão da turma e Decisões
+  const loadOverview = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (selectedClassId !== 'all') params.set('classId', selectedClassId);
+      const res = await fetch(`/api/professor/overview?${params.toString()}`, { cache: 'no-store' });
+      if (res.status === 401) {
+        setAuth('out');
+        return;
+      }
+      const data = await res.json();
+      if (data.success) setOverview(data);
+    } catch (err) {
+      console.error('Falha ao carregar a visão da turma:', err);
+    }
+  }, [selectedClassId]);
+
   // Efeito inicial e recarga com filtros
   useEffect(() => {
+    if (auth !== 'in') return;
     loadDashboardData();
-  }, [loadDashboardData]);
+  }, [auth, loadDashboardData]);
+
+  useEffect(() => {
+    if (auth !== 'in' || view === 'runs') return;
+    loadOverview();
+  }, [auth, view, loadOverview]);
 
   // Efeito ao selecionar outro jogador
   useEffect(() => {
-    if (selectedRunId) {
+    if (auth === 'in' && selectedRunId) {
       loadPlayerDetails(selectedRunId);
     }
-  }, [selectedRunId, loadPlayerDetails]);
+  }, [auth, selectedRunId, loadPlayerDetails]);
 
   // Auto-refresh opcional (a cada 15 segundos para acompanhar em tempo real)
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || auth !== 'in') return;
     const interval = setInterval(() => {
-      loadDashboardData();
-      if (selectedRunId) {
-        loadPlayerDetails(selectedRunId);
+      if (view === 'runs') {
+        loadDashboardData();
+        if (selectedRunId) loadPlayerDetails(selectedRunId);
+      } else {
+        loadOverview();
       }
     }, 15000);
     return () => clearInterval(interval);
-  }, [autoRefresh, loadDashboardData, loadPlayerDetails, selectedRunId]);
+  }, [autoRefresh, auth, view, loadDashboardData, loadPlayerDetails, loadOverview, selectedRunId]);
+
+  const exportCsv = (tipo: 'partidas' | 'escolhas') => {
+    const params = new URLSearchParams({ tipo });
+    if (selectedClassId !== 'all') params.set('classId', selectedClassId);
+    window.location.href = `/api/professor/export?${params.toString()}`;
+  };
 
   // Excluir partida
   const handleDeleteRun = async () => {
@@ -163,6 +232,17 @@ export default function ProfessorDashboardPage() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  if (auth === 'loading') {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#14121F] text-slate-400 font-mono text-sm">
+        Carregando…
+      </main>
+    );
+  }
+  if (auth === 'out') {
+    return <ProfessorLogin configured={passwordConfigured} onSuccess={() => setAuth('in')} />;
+  }
 
   return (
     <main className="min-h-screen bg-[#14121F] text-[#F2EFE6] p-4 sm:p-6 lg:p-8 select-none">
@@ -219,6 +299,22 @@ export default function ProfessorDashboardPage() {
               <span>{autoRefresh ? 'Tempo Real (15s)' : 'Pausado'}</span>
             </button>
 
+            {/* Exportar CSV (abre no Excel) */}
+            <button
+              onClick={() => exportCsv('partidas')}
+              className="px-3 py-1.5 bg-[#221F33] hover:bg-slate-800 text-slate-200 text-xs font-mono rounded-lg border border-slate-700"
+              title="Uma linha por aluno, com final e mapa de preferências"
+            >
+              ⬇ CSV partidas
+            </button>
+            <button
+              onClick={() => exportCsv('escolhas')}
+              className="px-3 py-1.5 bg-[#221F33] hover:bg-slate-800 text-slate-200 text-xs font-mono rounded-lg border border-slate-700"
+              title="Uma linha por decisão de cada aluno, com tempo de resposta"
+            >
+              ⬇ CSV escolhas
+            </button>
+
             {/* Link para o Jogo */}
             <Link
               href="/"
@@ -226,6 +322,12 @@ export default function ProfessorDashboardPage() {
             >
               ← Ir para o Jogo
             </Link>
+            <button
+              onClick={logout}
+              className="px-3 py-1.5 text-xs font-mono rounded-lg border border-slate-700 text-slate-400 hover:text-white"
+            >
+              Sair
+            </button>
           </div>
         </header>
 
@@ -236,6 +338,47 @@ export default function ProfessorDashboardPage() {
           onRefresh={loadDashboardData}
         />
 
+        {/* Abas do painel */}
+        <nav className="flex flex-wrap gap-2 font-mono text-sm">
+          {([
+            ['runs', 'Partidas'],
+            ['overview', 'Visão da turma'],
+            ['decisions', 'Decisões'],
+          ] as const).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setView(k)}
+              className={`px-4 py-2 rounded-lg border font-bold transition ${
+                view === k
+                  ? 'bg-[#E0A526] text-[#14121F] border-[#E0A526]'
+                  : 'bg-[#221F33] text-slate-300 border-slate-700 hover:text-white'
+              }`}
+            >
+              {label}
+              {k === 'decisions' && overview && overview.decisions.some((d) => d.options.some((o) => o.obvious)) && (
+                <span className="ml-1.5 text-rose-500" title="Há opções óbvias para revisar">●</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {view === 'overview' &&
+          (overview ? (
+            <ClassOverview
+              data={overview}
+              onOpenRun={(id) => {
+                setSelectedRunId(id);
+                setView('runs');
+              }}
+            />
+          ) : (
+            <p className="text-sm font-mono text-slate-400">Carregando…</p>
+          ))}
+
+        {view === 'decisions' &&
+          (overview ? <DecisionStats decisions={overview.decisions} /> : <p className="text-sm font-mono text-slate-400">Carregando…</p>)}
+
+        {view === 'runs' && (<>
         {/* Cartões de Métricas Agregadas */}
         <MetricsSummary metrics={metrics} />
 
@@ -355,6 +498,8 @@ export default function ProfessorDashboardPage() {
             )}
           </div>
         </div>
+
+        </>)}
 
         {/* Modal de Confirmação de Exclusão */}
         {showDeleteModal && selectedRun && (
